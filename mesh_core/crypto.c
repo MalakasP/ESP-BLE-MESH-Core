@@ -538,6 +538,32 @@ static void create_proxy_nonce(uint8_t nonce[13], const uint8_t *pdu,
     /* IV Index */
     sys_put_be32(iv_index, &nonce[9]);
 }
+
+static void create_proxy_nonce_chchp(uint8_t nonce[12], const uint8_t *pdu,
+                               uint32_t iv_index)
+{
+    /* Nonce Type */
+    nonce[0] = 0x03;
+
+    /* Pad */
+    nonce[1] = 0x00;
+
+    /* Sequence Number */
+    nonce[2] = pdu[2];
+    nonce[3] = pdu[3];
+    nonce[4] = pdu[4];
+
+    /* Source Address */
+    nonce[5] = pdu[5];
+    nonce[6] = pdu[6];
+
+    /* Pad */
+    nonce[7] = 0U;
+
+    /* IV Index */
+    sys_put_be32(iv_index, &nonce[8]);
+}
+
 #endif /* PROXY */
 
 static void create_net_nonce(uint8_t nonce[13], const uint8_t *pdu,
@@ -564,6 +590,31 @@ static void create_net_nonce(uint8_t nonce[13], const uint8_t *pdu,
 
     /* IV Index */
     sys_put_be32(iv_index, &nonce[9]);
+}
+
+static void create_net_nonce_chchp(uint8_t nonce[12], const uint8_t *pdu,
+                             uint32_t iv_index)
+{
+    /* Nonce Type */
+    nonce[0] = 0x00;
+
+    /* FRND + TTL */
+    nonce[1] = pdu[1];
+
+    /* Sequence Number */
+    nonce[2] = pdu[2];
+    nonce[3] = pdu[3];
+    nonce[4] = pdu[4];
+
+    /* Source Address */
+    nonce[5] = pdu[5];
+    nonce[6] = pdu[6];
+
+    /* Pad */
+    nonce[7] = 0U;
+
+    /* IV Index */
+    sys_put_be32(iv_index, &nonce[8]);
 }
 
 int bt_mesh_net_obfuscate(uint8_t *pdu, uint32_t iv_index,
@@ -622,6 +673,93 @@ int bt_mesh_net_encrypt(const uint8_t key[16], struct net_buf_simple *buf,
     }
 
     return err;
+}
+
+int bt_mesh_net_encrypt_chchp(const uint8_t key[16], struct net_buf_simple *buf,
+                        uint32_t iv_index, bool proxy)
+{
+    uint8_t mic_len = 16;
+    uint8_t tag[mic_len] = {0};
+    uint8_t nonce[12] = {0};
+    int err = 0;
+
+    BT_DBG("IVIndex %u EncKey %s mic_len %u", iv_index, bt_hex(key, 16),
+           mic_len);
+    BT_DBG("PDU (len %u) %s", buf->len, bt_hex(buf->data, buf->len));
+
+#if defined(CONFIG_BLE_MESH_PROXY)
+    if (proxy) {
+        create_proxy_nonce_chchp(nonce, buf->data, iv_index);
+    } else {
+        create_net_nonce_chchp(nonce, buf->data, iv_index);
+    }
+#else
+    create_net_nonce_chchp(nonce, buf->data, iv_index);
+#endif
+    BT_DBG("Nonce %s", bt_hex(nonce, 12));
+
+    mbedtls_chachapoly_context chachapoly;
+    uint8_t cha_key[32] = {};
+    memcpy(cha_key, key, 16);
+    memcpy(cha_key + 16, key, 16);
+
+    mbedtls_chachapoly_init(&chachapoly);
+
+    mbedtls_chachapoly_setkey(&chachapoly, cha_key);
+
+    err = mbedtls_chachapoly_encrypt_and_tag(&chachapoly, buf->len - 7, nonce, NULL, 0, &buf->data[7], &buf->data[7], &tag);
+
+    memcpy(&buf->data[7] + buf->len - 7, tag, mic_len);
+    
+    mbedtls_chachapoly_free(&chachapoly);
+
+    if (!err) {
+        net_buf_simple_add(buf, mic_len);
+    }
+
+    return err;
+}
+
+int bt_mesh_net_decrypt_chchp(const uint8_t key[16], struct net_buf_simple *buf,
+                        uint32_t iv_index, bool proxy)
+{
+    uint8_t mic_len = 16;
+    uint8_t tag[mic_len] = {0};
+    uint8_t nonce[12] = {0};
+
+    BT_DBG("PDU (%u bytes) %s", buf->len, bt_hex(buf->data, buf->len));
+    BT_DBG("iv_index %u, key %s mic_len %u", iv_index, bt_hex(key, 16),
+           mic_len);
+
+#if defined(CONFIG_BLE_MESH_PROXY)
+    if (proxy) {
+        create_proxy_nonce_chchp(nonce, buf->data, iv_index);
+    } else {
+        create_net_nonce_chchp(nonce, buf->data, iv_index);
+    }
+#else
+    create_net_nonce_chchp(nonce, buf->data, iv_index);
+#endif
+    BT_DBG("Nonce %s", bt_hex(nonce, 12));
+
+    mbedtls_chachapoly_context chachapoly;
+    uint8_t cha_key[32] = {};
+    memcpy(cha_key, key, 16);
+    memcpy(cha_key + 16, key, 16);
+
+    buf->len -= mic_len;
+    memcpy(&tag, &buf->data[buf->len], mic_len);
+    
+    mbedtls_chachapoly_init(&chachapoly);
+
+    mbedtls_chachapoly_setkey(&chachapoly, cha_key);
+
+    ret = mbedtls_chachapoly_auth_decrypt(&chachapoly, buf->len - 7, nonce, NULL, 0, &tag, &buf->data[7], &buf->data[7] );
+
+    mbedtls_chachapoly_free(&chachapoly);
+
+    return ret;
+
 }
 
 int bt_mesh_net_decrypt(const uint8_t key[16], struct net_buf_simple *buf,

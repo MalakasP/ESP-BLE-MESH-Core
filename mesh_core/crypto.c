@@ -698,11 +698,10 @@ int bt_mesh_net_encrypt_chchp(const uint8_t key[16], struct net_buf_simple *buf,
 #endif
     BT_DBG("Nonce %s", bt_hex(nonce, 12));
 
-    mbedtls_chachapoly_context chachapoly;
     uint8_t cha_key[32] = {};
-    memcpy(cha_key, key, 16);
-    memcpy(cha_key + 16, key, 16);
+    create_cha_cha_key(key, &cha_key);
 
+    mbedtls_chachapoly_context chachapoly;
     mbedtls_chachapoly_init(&chachapoly);
 
     mbedtls_chachapoly_setkey(&chachapoly, cha_key);
@@ -744,8 +743,7 @@ int bt_mesh_net_decrypt_chchp(const uint8_t key[16], struct net_buf_simple *buf,
 
     mbedtls_chachapoly_context chachapoly;
     uint8_t cha_key[32] = {};
-    memcpy(cha_key, key, 16);
-    memcpy(cha_key + 16, key, 16);
+    create_cha_cha_key(key, &cha_key);
 
     buf->len -= mic_len;
     memcpy(&tag, &buf->data[buf->len], mic_len);
@@ -759,7 +757,6 @@ int bt_mesh_net_decrypt_chchp(const uint8_t key[16], struct net_buf_simple *buf,
     mbedtls_chachapoly_free(&chachapoly);
 
     return ret;
-
 }
 
 int bt_mesh_net_decrypt(const uint8_t key[16], struct net_buf_simple *buf,
@@ -808,6 +805,23 @@ static void create_app_nonce(uint8_t nonce[13], bool dev_key, uint8_t aszmic,
     sys_put_be32(iv_index, &nonce[9]);
 }
 
+static void create_app_nonce_chchp(uint8_t nonce[12], bool dev_key, uint8_t aszmic,
+                             uint16_t src, uint16_t dst, uint32_t seq_num,
+                             uint32_t iv_index)
+{
+    nonce[0] = dev_key ? 0x02 : 0x01;
+
+    // Set or clear the least significant bit based on the value of aszmic
+    nonce[0] |= aszmic;
+
+    sys_put_be32(seq_num, &nonce[1]);
+
+    sys_put_be16(src, &nonce[4]);
+    sys_put_be16(dst, &nonce[6]);
+
+    sys_put_be32(iv_index, &nonce[8]);
+}
+
 int bt_mesh_app_encrypt(const uint8_t key[16], bool dev_key, uint8_t aszmic,
                         struct net_buf_simple *buf, const uint8_t *ad,
                         uint16_t src, uint16_t dst, uint32_t seq_num, uint32_t iv_index)
@@ -834,6 +848,53 @@ int bt_mesh_app_encrypt(const uint8_t key[16], bool dev_key, uint8_t aszmic,
     return err;
 }
 
+int bt_mesh_app_encrypt_chchp(const uint8_t key[16], bool dev_key, uint8_t aszmic,
+                        struct net_buf_simple *buf, const uint8_t *ad,
+                        uint16_t src, uint16_t dst, uint32_t seq_num, uint32_t iv_index)
+{
+    uint8_t mic_len = 16;
+    uint8_t tag[mic_len] = {0};
+    uint8_t nonce[12] = {0};
+    int err = 0;
+
+    BT_DBG("AppKey %s", bt_hex(key, 16));
+    BT_DBG("dev_key %u src 0x%04x dst 0x%04x", dev_key, src, dst);
+    BT_DBG("seq_num 0x%08x iv_index 0x%08x", seq_num, iv_index);
+    BT_DBG("Clear: %s", bt_hex(buf->data, buf->len));
+
+    create_app_nonce_chchp(nonce, dev_key, aszmic, src, dst, seq_num, iv_index);
+
+    BT_DBG("Nonce  %s", bt_hex(nonce, 12));
+
+    uint8_t cha_key[32] = {};
+    create_cha_cha_key(key, &cha_key);
+
+    mbedtls_chachapoly_context chachapoly;
+    mbedtls_chachapoly_init(&chachapoly);
+
+    mbedtls_chachapoly_setkey(&chachapoly, cha_key);
+
+    err = mbedtls_chachapoly_encrypt_and_tag(&chachapoly, buf->len, nonce, ad, ad ? 16 : 0, &buf->data, &buf->data, &tag);
+
+    memcpy(&buf->data + buf->len, tag, mic_len);
+    
+    mbedtls_chachapoly_free(&chachapoly);
+
+    if (!err) {
+        net_buf_simple_add(buf, mic_len);
+        BT_DBG("Encr: %s", bt_hex(buf->data, buf->len));
+    }
+
+    // err = bt_mesh_ccm_encrypt(key, nonce, buf->data, buf->len, ad,
+    //                           ad ? 16 : 0, buf->data, APP_MIC_LEN(aszmic));
+    // if (!err) {
+    //     net_buf_simple_add(buf, APP_MIC_LEN(aszmic));
+    //     BT_DBG("Encr: %s", bt_hex(buf->data, buf->len));
+    // }
+
+    return err;
+}
+
 int bt_mesh_app_decrypt(const uint8_t key[16], bool dev_key, uint8_t aszmic,
                         struct net_buf_simple *buf, struct net_buf_simple *out,
                         const uint8_t *ad, uint16_t src, uint16_t dst, uint32_t seq_num,
@@ -851,6 +912,45 @@ int bt_mesh_app_decrypt(const uint8_t key[16], bool dev_key, uint8_t aszmic,
 
     err = bt_mesh_ccm_decrypt(key, nonce, buf->data, buf->len, ad,
                               ad ? 16 : 0, out->data, APP_MIC_LEN(aszmic));
+    if (!err) {
+        net_buf_simple_add(out, buf->len);
+    }
+
+    return err;
+}
+
+int bt_mesh_app_decrypt_chchp(const uint8_t key[16], bool dev_key, uint8_t aszmic,
+                        struct net_buf_simple *buf, struct net_buf_simple *out,
+                        const uint8_t *ad, uint16_t src, uint16_t dst, uint32_t seq_num,
+                        uint32_t iv_index)
+{
+    uint8_t mic_len = 16;
+    uint8_t tag[mic_len] = {0};
+    uint8_t nonce[12] = {0};
+    int err = 0;
+
+    BT_DBG("EncData (len %u) %s", buf->len, bt_hex(buf->data, buf->len));
+
+    create_app_nonce_chchp(nonce, dev_key, aszmic, src, dst, seq_num, iv_index);
+
+    BT_DBG("AppKey %s", bt_hex(key, 16));
+    BT_DBG("Nonce  %s", bt_hex(nonce, 12));
+
+    mbedtls_chachapoly_context chachapoly;
+    uint8_t cha_key[32] = {};
+    create_cha_cha_key(key, &cha_key);
+
+    buf->len -= mic_len;
+    memcpy(&tag, &buf->data[buf->len], mic_len);
+    
+    mbedtls_chachapoly_init(&chachapoly);
+
+    mbedtls_chachapoly_setkey(&chachapoly, cha_key);
+
+    ret = mbedtls_chachapoly_auth_decrypt(&chachapoly, buf->len, nonce, ad, ad ? 16 : 0, &tag, &buf->data, &out->data);
+
+    mbedtls_chachapoly_free(&chachapoly);
+
     if (!err) {
         net_buf_simple_add(out, buf->len);
     }
@@ -1011,3 +1111,14 @@ int bt_mesh_beacon_auth(const uint8_t beacon_key[16], uint8_t flags,
 
     return err;
 }
+
+/**
+ * ChaChaPoly implementation 
+*/
+uint8_t create_cha_cha_key(const uint8_t key[16], const uint8_t *cha_key) {
+    memcpy(cha_key, key, 16);
+    memcpy(cha_key + 16, key, 16);
+}
+
+ 
+

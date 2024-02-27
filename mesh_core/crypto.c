@@ -872,13 +872,6 @@ int bt_mesh_app_encrypt_chchp(const uint8_t key[16], bool dev_key, uint8_t aszmi
         BT_DBG("Encr: %s", bt_hex(buf->data, buf->len));
     }
 
-    // err = bt_mesh_ccm_encrypt(key, nonce, buf->data, buf->len, ad,
-    //                           ad ? 16 : 0, buf->data, APP_MIC_LEN(aszmic));
-    // if (!err) {
-    //     net_buf_simple_add(buf, APP_MIC_LEN(aszmic));
-    //     BT_DBG("Encr: %s", bt_hex(buf->data, buf->len));
-    // }
-
     return err;
 }
 

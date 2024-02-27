@@ -135,14 +135,29 @@ int bt_mesh_net_obfuscate(uint8_t *pdu, uint32_t iv_index,
 int bt_mesh_net_encrypt(const uint8_t key[16], struct net_buf_simple *buf,
                         uint32_t iv_index, bool proxy);
 
+int bt_mesh_net_encrypt_chchp(const uint8_t key[16], struct net_buf_simple *buf,
+                        uint32_t iv_index, bool proxy);
+
 int bt_mesh_net_decrypt(const uint8_t key[16], struct net_buf_simple *buf,
+                        uint32_t iv_index, bool proxy);
+
+int bt_mesh_net_decrypt_chchp(const uint8_t key[16], struct net_buf_simple *buf,
                         uint32_t iv_index, bool proxy);
 
 int bt_mesh_app_encrypt(const uint8_t key[16], bool dev_key, uint8_t aszmic,
                         struct net_buf_simple *buf, const uint8_t *ad,
                         uint16_t src, uint16_t dst, uint32_t seq_num, uint32_t iv_index);
 
+int bt_mesh_app_encrypt_chchp(const uint8_t key[16], bool dev_key, uint8_t aszmic,
+                        struct net_buf_simple *buf, const uint8_t *ad,
+                        uint16_t src, uint16_t dst, uint32_t seq_num, uint32_t iv_index);
+
 int bt_mesh_app_decrypt(const uint8_t key[16], bool dev_key, uint8_t aszmic,
+                        struct net_buf_simple *buf, struct net_buf_simple *out,
+                        const uint8_t *ad, uint16_t src, uint16_t dst, uint32_t seq_num,
+                        uint32_t iv_index);
+
+int bt_mesh_app_decrypt_chchp(const uint8_t key[16], bool dev_key, uint8_t aszmic,
                         struct net_buf_simple *buf, struct net_buf_simple *out,
                         const uint8_t *ad, uint16_t src, uint16_t dst, uint32_t seq_num,
                         uint32_t iv_index);
@@ -166,6 +181,8 @@ int bt_mesh_prov_decrypt(const uint8_t key[16], uint8_t nonce[13],
 
 int bt_mesh_prov_encrypt(const uint8_t key[16], uint8_t nonce[13],
                          const uint8_t data[25], uint8_t out[33]);
+
+void create_cha_cha_key(const uint8_t key[16], uint8_t *cha_key);
 
 #ifdef __cplusplus
 }

@@ -766,9 +766,9 @@ uint32_t bt_mesh_next_seq(void)
 {
     uint32_t seq = bt_mesh.seq++;
 
-    if (IS_ENABLED(CONFIG_BLE_MESH_SETTINGS)) {
-        bt_mesh_store_seq();
-    }
+    // if (IS_ENABLED(CONFIG_BLE_MESH_SETTINGS)) {
+    //     bt_mesh_store_seq();
+    // }
 
     if (!bt_mesh_atomic_test_bit(bt_mesh.flags, BLE_MESH_IVU_IN_PROGRESS) &&
             bt_mesh.seq > IV_UPDATE_SEQ_LIMIT &&
@@ -815,7 +815,7 @@ int bt_mesh_net_resend(struct bt_mesh_subnet *sub, struct net_buf *buf,
     /* Get destination, in case it's a proxy client */
     dst = DST(buf->data);
 
-    err = bt_mesh_net_encrypt_chchp(enc, &buf->b, BLE_MESH_NET_IVI_TX, false);
+    err = bt_mesh_net_encrypt(enc, &buf->b, BLE_MESH_NET_IVI_TX, false);
     if (err) {
         BT_ERR("Encrypt failed (err %d)", err);
         return err;
@@ -905,7 +905,7 @@ int bt_mesh_net_encode(struct bt_mesh_net_tx *tx, struct net_buf_simple *buf,
 
     net_buf_simple_push_u8(buf, (nid | (BLE_MESH_NET_IVI_TX & 1) << 7));
 
-    err = bt_mesh_net_encrypt_chchp(enc, buf, BLE_MESH_NET_IVI_TX, proxy);
+    err = bt_mesh_net_encrypt(enc, buf, BLE_MESH_NET_IVI_TX, proxy);
     if (err) {
         return err;
     }

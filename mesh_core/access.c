@@ -891,7 +891,7 @@ int bt_mesh_model_publish(struct bt_mesh_model *model)
     BT_INFO("Publish Retransmit Count %u Interval %ums", pub->count,
            BLE_MESH_PUB_TRANSMIT_INT(pub->retransmit));
 
-    sdu = bt_mesh_alloc_buf(pub->msg->len + BLE_MESH_MIC_SHORT);
+    sdu = bt_mesh_alloc_buf(pub->msg->len + 16);
     if (!sdu) {
         BT_ERR("%s, Out of memory", __func__);
         return -ENOMEM;

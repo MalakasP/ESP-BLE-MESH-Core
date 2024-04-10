@@ -464,7 +464,7 @@ static int send_seg(struct bt_mesh_net_tx *net_tx, struct net_buf_simple *sdu,
     tx->seq_auth = SEQ_AUTH(BLE_MESH_NET_IVI_TX, bt_mesh.seq);
     tx->sub = net_tx->sub;
     tx->new_key = net_tx->sub->kr_flag;
-    tx->attempts = SEG_RETRANSMIT_ATTEMPTS;
+    tx->attempts = 1;
     tx->seg_pending = 0;
     tx->cb = cb;
     tx->cb_data = cb_data;
@@ -599,9 +599,10 @@ int bt_mesh_trans_send(struct bt_mesh_net_tx *tx, struct net_buf_simple *msg,
         return -EINVAL;
     }
 
-    if (msg->len > BLE_MESH_SDU_UNSEG_MAX) {
-        tx->ctx->send_rel = 1U;
-    }
+    /**
+     * All messages are sent in segments
+     */
+    tx->ctx->send_rel = 1U;
 
     BT_DBG("net_idx 0x%04x app_idx 0x%04x dst 0x%04x", tx->sub->net_idx,
            tx->ctx->app_idx, tx->ctx->addr);
@@ -633,7 +634,7 @@ int bt_mesh_trans_send(struct bt_mesh_net_tx *tx, struct net_buf_simple *msg,
         ad = NULL;
     }
 
-    err = bt_mesh_app_encrypt(key, tx->ctx->app_idx == BLE_MESH_KEY_DEV,
+    err = bt_mesh_app_encrypt_chchp(key, tx->ctx->app_idx == BLE_MESH_KEY_DEV,
                               tx->aszmic, msg, ad, tx->src,
                               tx->ctx->addr, bt_mesh.seq,
                               BLE_MESH_NET_IVI_TX);
@@ -750,7 +751,7 @@ static int sdu_recv(struct bt_mesh_net_rx *rx, uint32_t seq, uint8_t hdr,
     }
 
     /* Adjust the length to not contain the MIC at the end */
-    buf->len -= APP_MIC_LEN(aszmic);
+    // buf->len -= APP_MIC_LEN(aszmic);
 
     /* Use bt_mesh_alloc_buf() instead of NET_BUF_SIMPLE_DEFINE to avoid
      * causing btu task stackoverflow.
@@ -774,7 +775,7 @@ static int sdu_recv(struct bt_mesh_net_rx *rx, uint32_t seq, uint8_t hdr,
             }
 
             net_buf_simple_reset(sdu);
-            err = bt_mesh_app_decrypt(dev_key, true, aszmic, buf,
+            err = bt_mesh_app_decrypt_chchp(dev_key, true, aszmic, buf,
                                       sdu, ad, rx->ctx.addr,
                                       rx->ctx.recv_dst, seq,
                                       BLE_MESH_NET_IVI_RX(rx));
@@ -828,7 +829,7 @@ static int sdu_recv(struct bt_mesh_net_rx *rx, uint32_t seq, uint8_t hdr,
         }
 
         net_buf_simple_reset(sdu);
-        err = bt_mesh_app_decrypt(keys->val, false, aszmic, buf,
+        err = bt_mesh_app_decrypt_chchp(keys->val, false, aszmic, buf,
                                   sdu, ad, rx->ctx.addr,
                                   rx->ctx.recv_dst, seq,
                                   BLE_MESH_NET_IVI_RX(rx));

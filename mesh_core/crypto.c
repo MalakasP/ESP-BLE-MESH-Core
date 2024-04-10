@@ -709,9 +709,9 @@ int bt_mesh_net_encrypt_chchp(const uint8_t key[16], struct net_buf_simple *buf,
 
     mbedtls_chachapoly_setkey(&chachapoly, cha_key);
 
-    err = mbedtls_chachapoly_encrypt_and_tag(&chachapoly, buf->len - 7, nonce, NULL, 0, buf->data[7], buf->data[7], tag);
+    err = mbedtls_chachapoly_encrypt_and_tag(&chachapoly, buf->len - 7, nonce, NULL, 0, &buf->data[7], &buf->data[7], tag);
 
-    memcpy(&buf->data[7] + buf->len - 7, tag, mic_len);
+    memcpy(buf->data + buf->len, tag, mic_len);
     
     mbedtls_chachapoly_free(&chachapoly);
 
@@ -757,7 +757,7 @@ int bt_mesh_net_decrypt_chchp(const uint8_t key[16], struct net_buf_simple *buf,
 
     mbedtls_chachapoly_setkey(&chachapoly, cha_key);
 
-    ret = mbedtls_chachapoly_auth_decrypt(&chachapoly, buf->len - 7, nonce, NULL, 0, tag, buf->data[7], buf->data[7] );
+    ret = mbedtls_chachapoly_auth_decrypt(&chachapoly, buf->len - 7, nonce, NULL, 0, tag, &buf->data[7], &buf->data[7]);
 
     mbedtls_chachapoly_free(&chachapoly);
 
@@ -877,12 +877,10 @@ int bt_mesh_app_encrypt_chchp(const uint8_t key[16], bool dev_key, uint8_t aszmi
 
     mbedtls_chachapoly_context chachapoly;
     mbedtls_chachapoly_init(&chachapoly);
-
     mbedtls_chachapoly_setkey(&chachapoly, cha_key);
-
     err = mbedtls_chachapoly_encrypt_and_tag(&chachapoly, buf->len, nonce, ad, ad ? 16 : 0, buf->data, buf->data, tag);
 
-    memcpy(&buf->data + buf->len, tag, mic_len);
+    memcpy(buf->data + buf->len, tag, mic_len);
     
     mbedtls_chachapoly_free(&chachapoly);
 
@@ -940,7 +938,7 @@ int bt_mesh_app_decrypt_chchp(const uint8_t key[16], bool dev_key, uint8_t aszmi
     create_cha_cha_key(key, cha_key);
 
     buf->len -= mic_len;
-    memcpy(&tag, &buf->data[buf->len], mic_len);
+    memcpy(tag, &buf->data[buf->len], mic_len);
     
     mbedtls_chachapoly_init(&chachapoly);
 
@@ -1118,6 +1116,3 @@ void create_cha_cha_key(const uint8_t key[16], uint8_t *cha_key) {
     memcpy(cha_key, key, 16);
     memcpy(cha_key + 16, key, 16);
 }
-
- 
-
